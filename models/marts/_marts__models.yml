@@ -1,0 +1,243 @@
+version: 2
+
+models:
+  - name: dim_products
+    description: "Product dimension - one row per product, with the English category name joined in. Built from stg_olist__products + stg_olist__product_category_translation."
+    columns:
+      - name: product_key
+        description: "Surrogate key (hash of product_id). Primary key of this dimension; facts reference products through this key."
+        data_tests:
+          - unique
+          - not_null
+      - name: product_id
+        description: "Natural/business key from the source, retained for traceability."
+        data_tests:
+          - unique
+          - not_null
+      - name: product_category_name
+        description: "Product category in Portuguese. Nullable."
+      - name: product_category_name_english
+        description: "Product category in English, joined from the translation lookup. Null where the Portuguese category has no match or is itself null."
+      - name: product_name_length
+        description: "Character length of the product name."
+      - name: product_description_length
+        description: "Character length of the product description."
+      - name: product_photos_qty
+        description: "Number of published product photos."
+      - name: product_weight_g
+        description: "Product weight in grams."
+      - name: product_length_cm
+        description: "Product length in centimetres."
+      - name: product_height_cm
+        description: "Product height in centimetres."
+      - name: product_width_cm
+        description: "Product width in centimetres."
+  - name: dim_sellers
+    description: "Seller dimension - one row per seller. Built from stg_olist__sellers."
+    columns:
+      - name: seller_key
+        description: "Surrogate key (hash of seller_id). Primary key of this dimension; facts reference sellers through this key."
+        data_tests:
+          - unique
+          - not_null
+      - name: seller_id
+        description: "Natural/business key from the source, retained for traceability."
+        data_tests:
+          - unique
+          - not_null
+      - name: seller_zip_code_prefix
+        description: "First five digits of the seller's Brazilian zip code (CEP). Text, leading zeros preserved."
+      - name: seller_city
+        description: "Seller city name (lowercase, Portuguese, accents stripped)."
+      - name: seller_state
+        description: "Two-letter Brazilian state code (e.g. SP = Sao Paulo)."
+  - name: dim_customers
+    description: "Customer dimension - one row per customer_id (Olist's per-order customer key), from stg_olist__customers. NOT a deduplicated list of people: one real person can appear under many customer_ids. For person-level analysis (retention, repeat-rate, RFM), aggregate by customer_unique_id, never customer_id."
+    columns:
+      - name: customer_key
+        description: "Surrogate key (hash of customer_id). Primary key of this dimension; facts reference customers through this key."
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: "Natural/business key - Olist's per-order customer key. Confirms the dimension grain."
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_unique_id
+        description: "Identifier for a real person across all their orders. Repeats for repeat buyers, so NOT unique. Use this for all person-level analysis."
+        data_tests:
+          - not_null
+      - name: customer_zip_code_prefix
+        description: "First five digits of the customer's Brazilian zip code (CEP). Text, leading zeros preserved."
+      - name: customer_city
+        description: "Customer city name (lowercase, Portuguese, accents stripped)."
+      - name: customer_state
+        description: "Two-letter Brazilian state code (e.g. SP = Sao Paulo)."
+  - name: fct_order_items
+    description: "Order line-item fact - one row per order line (order_id + order_item_id). Carries surrogate FKs to dim_products and dim_sellers, plus the price and freight measures."
+    columns:
+      - name: order_item_key
+        description: "Surrogate primary key of the fact (hash of order_id + order_item_id)."
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: "Degenerate dimension - the order this line belongs to."
+        data_tests:
+          - not_null
+      - name: order_item_id
+        description: "Degenerate dimension - line number within the order."
+        data_tests:
+          - not_null
+      - name: product_key
+        description: "Foreign key to dim_products."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_key
+      - name: seller_key
+        description: "Foreign key to dim_sellers."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_sellers')
+                field: seller_key
+      - name: shipping_limit_timestamp
+        description: "Seller's shipping deadline for the item."
+      - name: price
+        description: "Item price in Brazilian reais (BRL). Measure."
+      - name: freight_value
+        description: "Freight cost allocated to this item, in BRL. Measure."
+      - name: customer_seller_distance_km
+        description: "Great-circle (haversine) distance in km between the customer's and seller's zip-code centroids. Null where a zip is missing from geolocation. Measure."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+  - name: fct_orders
+    description: "Order fact - one row per order. Carries the customer surrogate key, order lifecycle timestamps, and order-grain measures aggregated from items, payments and reviews."
+    columns:
+      - name: order_key
+        description: "Surrogate primary key of the fact (hash of order_id)."
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: "Degenerate dimension / natural key. Confirms the one-row-per-order grain."
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_key
+        description: "Foreign key to dim_customers."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_key
+      - name: order_status
+        description: "Order lifecycle status (delivered, shipped, canceled, etc.)."
+      - name: order_purchase_timestamp
+        description: "When the customer placed the order."
+      - name: order_approved_timestamp
+        description: "When payment was approved. Null if not approved."
+      - name: order_delivered_carrier_timestamp
+        description: "When the order was handed to the carrier. Null until handed off."
+      - name: order_delivered_customer_timestamp
+        description: "When the order was delivered to the customer. Null until delivered."
+      - name: order_estimated_delivery_date
+        description: "Estimated delivery date promised at purchase."
+      - name: item_count
+        description: "Number of line items in the order. Measure."
+      - name: total_item_price
+        description: "Sum of item prices in the order, BRL. Measure."
+      - name: total_freight_value
+        description: "Sum of freight charges in the order, BRL. Measure."
+      - name: total_payment_value
+        description: "Sum of all payments for the order, BRL. Measure."
+      - name: payment_count
+        description: "Number of payment records (more than one = split payment). Measure."
+      - name: avg_review_score
+        description: "Average review score (1-5) for the order. Null if no review. Measure."
+      - name: review_count
+        description: "Number of reviews for the order. Measure."
+      - name: delivery_days
+        description: "Whole days from purchase to actual delivery. Null if not delivered. Measure."
+      - name: delivery_vs_estimate_days
+        description: "Actual delivery date minus the promised estimate, in days. Positive = late, negative = early. Null if not delivered. Measure."
+  - name: customer_rfm
+    description: "Customer-level RFM segmentation, one row per customer_unique_id (the real person, not the per-order customer_id). R and M scored via NTILE quintiles; F tiered by CASE because ~97% of customers are one-time buyers (NTILE on that tie is meaningless). Segments are R+M-led for the same reason."
+    columns:
+      - name: customer_unique_id
+        description: "The real customer (deduplicated across orders). Primary key - one row per person."
+        data_tests:
+          - unique
+          - not_null
+      - name: recency_days
+        description: "Days from the customer's last order to the dataset's latest order (static-data snapshot). Lower = more recent."
+      - name: frequency
+        description: "Number of orders. ~97% of customers = 1."
+      - name: monetary
+        description: "Total payment value across the customer's orders (BRL)."
+      - name: r_score
+        description: "Recency quintile (NTILE), 1-5; 5 = most recent."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: m_score
+        description: "Monetary quintile (NTILE), 1-5; 5 = highest spend."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: f_score
+        description: "Frequency tier (CASE, not NTILE): 1 = single order, 3 = two, 5 = three or more."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 3, 5]
+      - name: segment
+        description: "Customer segment derived from the R and M scores plus the frequency tier: Champions, At Risk, New / Low-Value, Lost, Loyal (3+ orders), or Regular. R+M-led because frequency is degenerate (~97% one-time buyers)."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Champions', 'At Risk', 'New / Low-Value', 'Lost', 'Loyal (3+ orders)', 'Regular']
+  - name: seller_performance
+    description: "Seller performance mart, one row per seller. Revenue and freight are summed from line-grain items (additive); review score and late rate are order-grain attributes joined onto the items, so they are item-weighted (each item carries its order's value)."
+    columns:
+      - name: seller_key
+        description: "Surrogate key from dim_sellers. Primary key - one row per seller."
+        data_tests:
+          - unique
+          - not_null
+      - name: seller_id
+        description: "Natural/business key from the source, retained for traceability."
+        data_tests:
+          - not_null
+      - name: seller_state
+        description: "Two-letter Brazilian state code (e.g. SP = Sao Paulo)."
+      - name: item_count
+        description: "Number of order lines sold by the seller."
+      - name: delivered_item_count
+        description: "Number of the seller's order lines that have been delivered (non-null delivery estimate gap). This is the denominator behind late_rate, so it is the correct population threshold for late-rate reliability, not item_count."
+      - name: order_count
+        description: "Distinct orders the seller had a line in."
+      - name: product_count
+        description: "Distinct products the seller has sold."
+      - name: total_revenue
+        description: "Sum of item price across the seller's lines (BRL)."
+      - name: total_freight
+        description: "Sum of freight value across the seller's lines (BRL)."
+      - name: avg_review_score
+        description: "Item-weighted average review score (1-5) across the orders the seller had items in. Null where none of those orders were reviewed."
+      - name: late_rate
+        description: "Share of the seller's delivered items that arrived after the estimated date. Delivered items only (undelivered orders have a null estimate gap and are excluded). Null for sellers with no delivered items."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: avg_distance_km
+        description: "Item-weighted average customer-to-seller haversine distance (km). Null where zip centroids are missing."
