@@ -1,0 +1,216 @@
+version: 2
+
+models:
+  - name: stg_olist__orders
+    description: "One row per order, lightly cleaned"
+    columns:
+    - name: order_id
+      description: "Primary key. Unique identifier for a single order."
+      data_tests:
+        - unique
+        - not_null
+    - name: customer_id
+      description: "Foreign key to the customers table. A per-order customer key, NOT a stable person identifier. Use customer_unique_id (in customers) to identify a real shopper across orders."
+    - name: order_status
+      description: "The status of an order's lifecycle (e.g. delivered, shipped, canceled, unavailable)"
+      data_tests:
+        - accepted_values:
+            arguments:
+              values:
+                - delivered
+                - shipped
+                - canceled
+                - unavailable
+                - invoiced
+                - processing
+                - created
+                - approved
+    - name: order_purchase_timestamp
+      description: "When the customer placed the order"
+    - name: order_approved_timestamp
+      description: "When the order's payment was approved. Null if not approved."
+    - name: order_delivered_carrier_timestamp
+      description: "When the order was handed to the logistics carrier. Null until handed off."
+    - name: order_delivered_customer_timestamp
+      description: "When the order was delivered to the customer. Null until delivered."
+    - name: order_estimated_delivery_date
+      description: "Estimated delivery date promised to the customer. Date only (source stores it at midnight, so it's been recast from TIMESTAMP to DATE here)."
+  - name: stg_olist__customers
+    description: "One row per customer_id, Olist's per-order customer key. customer_unique_id is the stable identifier for a real person across orders."
+    columns:
+      - name: customer_id
+        description: "Primary key of this table. Per-order customer key that joins to orders. NOT a stable person identifier."
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_unique_id
+        description: "Stable identifier for a real customer across all their orders. Repeats for repeat buyers, so it is NOT unique. Use this for retention/RFM analysis, never customer_id."
+        data_tests:
+          - not_null
+      - name: customer_zip_code_prefix
+        description: "First five digits of the customer's Brazilian zip code (CEP). Kept as text so leading zeros survive; joins to the geolocation table."
+      - name: customer_city
+        description: "Customer city name (lowercase, Portuguese, accents stripped)."
+      - name: customer_state
+        description: "Two-letter Brazilian state code (e.g. SP = Sao Paulo)."
+  - name: stg_olist__sellers
+    description: "One row per seller. Sellers fulfil order items in the Olist marketplace."
+    columns:
+      - name: seller_id
+        description: "Primary key. Unique identifier for a seller."
+        data_tests:
+          - unique
+          - not_null
+      - name: seller_zip_code_prefix
+        description: "First five digits of the seller's Brazilian zip code (CEP). Kept as text so leading zeros survive; joins to the geolocation table."
+      - name: seller_city
+        description: "Seller city name (lowercase, Portuguese, accents stripped)."
+      - name: seller_state
+        description: "Two-letter Brazilian state code (e.g. SP = Sao Paulo)."
+  - name: stg_olist__products
+    description: "One row per product, with physical attributes and a Portuguese category name. The basis for the products dimension."
+    columns:
+      - name: product_id
+        description: "Primary key. Unique identifier for a product."
+        data_tests:
+          - unique
+          - not_null
+      - name: product_category_name
+        description: "Product category in Portuguese. Nullable - some products have no category. Joins to the product_category_translation lookup for the English name."
+      - name: product_name_length
+        description: "Character length of the product name. Renamed from the source's misspelled 'product_name_lenght'."
+      - name: product_description_length
+        description: "Character length of the product description. Renamed from the source's misspelled 'product_description_lenght'."
+      - name: product_photos_qty
+        description: "Number of published photos for the product."
+      - name: product_weight_g
+        description: "Product weight in grams."
+      - name: product_length_cm
+        description: "Product length in centimetres."
+      - name: product_height_cm
+        description: "Product height in centimetres."
+      - name: product_width_cm
+        description: "Product width in centimetres."
+  - name: stg_olist__order_items
+    description: "One row per order line item. Grain is the composite key order_id + order_item_id; holds the product, seller, price and freight for each item in an order."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - order_id
+              - order_item_id
+    columns:
+      - name: order_id
+        description: "Part of the composite primary key. Foreign key to orders."
+        data_tests:
+          - not_null
+      - name: order_item_id
+        description: "Part of the composite primary key. Sequential line number of the item within its order (1, 2, 3...). Not unique on its own."
+        data_tests:
+          - not_null
+      - name: product_id
+        description: "Foreign key to products - the item purchased."
+        data_tests:
+          - not_null
+      - name: seller_id
+        description: "Foreign key to sellers - who fulfils this item."
+        data_tests:
+          - not_null
+      - name: shipping_limit_timestamp
+        description: "Seller's shipping deadline for the item. Renamed from the source's 'shipping_limit_date' - it carries a real time, so it is a timestamp."
+      - name: price
+        description: "Item price in Brazilian reais (BRL)."
+      - name: freight_value
+        description: "Freight cost allocated to this item, in BRL."
+  - name: stg_olist__order_payments
+    description: "One row per payment applied to an order. Grain is the composite key order_id + payment_sequential; an order split across multiple methods has multiple rows."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - order_id
+              - payment_sequential
+    columns:
+      - name: order_id
+        description: "Part of the composite primary key. Foreign key to orders."
+        data_tests:
+          - not_null
+      - name: payment_sequential
+        description: "Part of the composite primary key. Sequence number when an order is paid with more than one method (1, 2, 3...)."
+        data_tests:
+          - not_null
+      - name: payment_type
+        description: "Payment method. 'not_defined' (3 rows) is a junk/unknown value, kept here for test accuracy; a mart may later map it to null."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - credit_card
+                  - boleto
+                  - voucher
+                  - debit_card
+                  - not_defined
+      - name: payment_installments
+        description: "Number of installments the payment was split into."
+      - name: payment_value
+        description: "Payment amount in Brazilian reais (BRL)."
+  - name: stg_olist__order_reviews
+    description: "One row per review-order pair. Grain is the composite key review_id + order_id; a review can cover multiple orders and an order can have multiple reviews, so neither id is unique alone."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - review_id
+              - order_id
+    columns:
+      - name: review_id
+        description: "Part of the composite primary key. Identifier for a review (repeats when one review covers several orders)."
+        data_tests:
+          - not_null
+      - name: order_id
+        description: "Part of the composite primary key. Foreign key to orders (repeats when an order has several reviews)."
+        data_tests:
+          - not_null
+      - name: review_score
+        description: "Customer rating from 1 (worst) to 5 (best)."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: review_comment_title
+        description: "Optional free-text review title. Null for most reviews."
+      - name: review_comment_message
+        description: "Optional free-text review body. Null for most reviews."
+      - name: review_creation_timestamp
+        description: "When the review survey was created. Renamed from 'review_creation_date' - 85 rows carry a real time, so kept as a timestamp rather than cast to a date."
+      - name: review_answer_timestamp
+        description: "When the customer submitted their review answer."
+  - name: stg_olist__geolocation
+    description: "Latitude/longitude reference points by Brazilian zip code prefix. Multiple rows per prefix, so no primary key; used to map customers and sellers to locations."
+    columns:
+      - name: geolocation_zip_code_prefix
+        description: "First five digits of a Brazilian zip code (CEP). Text, leading zeros preserved; joins to customer and seller zip prefixes."
+        data_tests:
+          - not_null
+      - name: geolocation_lat
+        description: "Latitude of the point."
+        data_tests:
+          - not_null
+      - name: geolocation_lng
+        description: "Longitude of the point."
+        data_tests:
+          - not_null
+      - name: geolocation_city
+        description: "City name (lowercase, Portuguese, accents stripped)."
+      - name: geolocation_state
+        description: "Two-letter Brazilian state code (e.g. SP = Sao Paulo)."
+  - name: stg_olist__product_category_translation
+    description: "Lookup mapping Olist's Portuguese product category names to their English equivalents (71 categories)."
+    columns:
+      - name: product_category_name
+        description: "Primary key. Product category name in Portuguese. Joins to products.product_category_name."
+        data_tests:
+          - unique
+          - not_null
+      - name: product_category_name_english
+        description: "English translation of the category name."

@@ -1,0 +1,29 @@
+
+version: 2
+
+sources:
+  - name: olist
+    description: "Raw Brazilian e-commerce CSVs from the Olist Kaggle dataset (manually downloaded into /data)."
+    meta:
+      external_location: "data/olist_{name}_dataset.csv"
+    tables:
+      - name: customers
+        description: "One row per order-customer. customer_unique_id is the real person; customer_id is per-order."
+      - name: orders
+        description: "One row per order, with lifecycle timestamps and status."
+      - name: order_items
+        description: "One row per item line within an order."
+      - name: order_payments
+        description: "Payment records (can be multiple installments per order)."
+      - name: order_reviews
+        description: "Review score and free-text comments per order."
+      - name: products
+        description: "Product attributes and Portuguese category name."
+      - name: sellers
+        description: "Seller location (zip prefix, city, state)."
+      - name: geolocation
+        description: "Lat/long by zip-code prefix; multiple rows per prefix."
+      - name: product_category_translation
+        description: "Portuguese -> English category-name lookup."
+        meta:
+          external_location: "data/product_category_name_translation.csv"
