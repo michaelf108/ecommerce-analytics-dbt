@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: int_order_items_aggregated
+    description: "Order items aggregated to order grain - one row per order_id, summing item count, price and freight from stg_olist__order_items."
+    columns:
+      - name: order_id
+        description: "Primary key - one row per order after aggregation."
+        data_tests:
+          - unique
+          - not_null
+      - name: item_count
+        description: "Number of line items in the order."
+      - name: total_item_price
+        description: "Sum of item prices in the order (BRL)."
+      - name: total_freight_value
+        description: "Sum of freight charges in the order (BRL)."
+  - name: int_order_payments_aggregated
+    description: "Payments aggregated to order grain - one row per order_id, summing payment value and counting payment records from stg_olist__order_payments."
+    columns:
+      - name: order_id
+        description: "Primary key - one row per order after aggregation."
+        data_tests:
+          - unique
+          - not_null
+      - name: total_payment_value
+        description: "Sum of all payments for the order (BRL)."
+      - name: payment_count
+        description: "Number of payment records for the order (more than one = split payment)."
+  - name: int_order_reviews_aggregated
+    description: "Reviews aggregated to order grain - one row per order_id that has at least one review, with the average review score and review count from stg_olist__order_reviews."
+    columns:
+      - name: order_id
+        description: "Primary key - one row per reviewed order."
+        data_tests:
+          - unique
+          - not_null
+      - name: avg_review_score
+        description: "Average review score (1-5) across the order's reviews."
+      - name: review_count
+        description: "Number of reviews for the order."
+  - name: int_geolocation_deduped
+    description: "Geolocation collapsed to one centroid point (avg lat/long) per zip code prefix, so it can join 1:1 to customers and sellers without fanning out."
+    columns:
+      - name: zip_code_prefix
+        description: "Brazilian zip code prefix (CEP). Primary key - one row per prefix."
+        data_tests:
+          - unique
+          - not_null
+      - name: latitude
+        description: "Mean latitude of the prefix's points."
+      - name: longitude
+        description: "Mean longitude of the prefix's points."
