@@ -1,0 +1,25 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# data
+data/
+
+# dbt artifacts
+target/
+dbt_packages/
+logs/
+
+# DuckDB database (regenerable)
+*.duckdb
+*.duckdb.wal
+
+#dbt local user id
+.user.yml
