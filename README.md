@@ -132,7 +132,7 @@ The model loaded into Power BI is the dbt star schema itself: fact tables joined
 
 **Overview.** Headline KPIs, a revenue trend shown alongside average review score, and top sellers and categories with a revenue/orders toggle.
 
-![Power BI overview page](docs/images/olist_pbi_overview.png)
+![Power BI overview page](docs/images/olist_pbi_overview.png?v=2)
 
 **Delivery Performance.** On-time and late rates, the delivery-status split, and late rate over time and by state. The operational view behind insight 2.
 
