@@ -1,1 +1,4 @@
 * text=auto eol=lf
+*.sql linguist-detectable=true
+*.sql linguist-language=SQL
+uv.lock linguist-generated=true
