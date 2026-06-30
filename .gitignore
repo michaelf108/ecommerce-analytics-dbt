@@ -12,6 +12,9 @@ wheels/
 # data
 data/
 
+# Power BI mart exports (regenerable from `dbt build` + export_marts.py)
+powerbi/exports/
+
 # dbt artifacts
 target/
 dbt_packages/

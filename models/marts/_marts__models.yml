@@ -241,3 +241,54 @@ models:
                 max_value: 1
       - name: avg_distance_km
         description: "Item-weighted average customer-to-seller haversine distance (km). Null where zip centroids are missing."
+  - name: customer_satisfaction
+    description: "Customer-level satisfaction mart, one row per customer_unique_id (the real person). Co-locates total spend, order count and average review score at customer grain so high-value, low-review customers can be found in one place - the star schema keeps spend and review on separate tables at different grains. Spend mirrors customer_rfm's monetary; review is averaged across the customer's orders."
+    columns:
+      - name: customer_unique_id
+        description: "The real customer (deduplicated across orders). Primary key - one row per person."
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_state
+        description: "Two-letter Brazilian state code. A person can have orders from more than one state; max() picks one deterministically."
+      - name: customer_city
+        description: "Customer city name. A person can have orders from more than one city; max() picks one deterministically."
+      - name: order_count
+        description: "Distinct orders placed by the customer."
+      - name: total_spent
+        description: "Total payment value across the customer's orders (BRL)."
+      - name: avg_review_score
+        description: "Average review score (1-5) across the customer's reviewed orders. Null if none of their orders were reviewed."
+      - name: spending_percentile
+        description: "Percent rank of total_spent across all customers: 0 = lowest spender, 1 = top spender."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: order_year
+        description: "Year of the customer's most recent order."
+      - name: order_month
+        description: "Month name of the customer's most recent order."
+  - name: category_satisfaction
+    description: "Review-score distribution per product category, one row per (product_category, review_score). Each order's review is attached to its line items (item-weighted), then counted - so review (order grain) and category (product grain) can be crossed, which the star schema can't do directly. Powers the 100% stacked bar of satisfaction by category."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - product_category
+              - review_score
+    columns:
+      - name: product_category
+        description: "Product category in English, falling back to the Portuguese name where untranslated and '(uncategorised)' where absent."
+        data_tests:
+          - not_null
+      - name: review_score
+        description: "Order review score rounded to a whole star (1-5)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: item_count
+        description: "Number of order line items in this category at this review score."
